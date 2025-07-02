@@ -2,6 +2,7 @@ import pandas as pd
 import json
 import pathlib
 import re
+import argparse
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -22,6 +23,11 @@ heatmap_colorscale = [
 
 categories = colors.keys()
 
+parser = argparse.ArgumentParser(description="Generate visualisations from progress.json")
+parser.add_argument("--models", nargs="*", help="Subset of models to visualise")
+parser.add_argument("--list", action="store_true", help="List models and statistics and exit")
+args = parser.parse_args()
+
 
 progress_path = pathlib.Path("progress.json")
 if not progress_path.exists():
@@ -30,7 +36,8 @@ if not progress_path.exists():
     
 progress = json.loads(progress_path.read_text())
 
-models = list(progress["models"].keys())
+models = args.models if args.models else list(progress["models"].keys())
+models = sorted(models)
 summary_data = []
 name_sex_summary_data = []
 for model in models:
@@ -53,6 +60,12 @@ name_sex_summary = pd.DataFrame(name_sex_summary_data).set_index("model")
 
 summary.index = summary.index.str.replace(':latest', '', regex=False)
 name_sex_summary.index = name_sex_summary.index.str.replace(':latest', '', regex=False)
+
+if args.list:
+    table = summary[list(categories)].copy()
+    table.insert(0, "completed_turns", [len(progress["models"][m].get("data", [])) for m in summary.index])
+    print(table.to_string())
+    exit()
 
 
 name_df = summary[["names"]].copy()

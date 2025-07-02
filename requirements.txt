@@ -2,3 +2,4 @@ pandas
 requests
 tqdm
 plotly
+python-dotenv

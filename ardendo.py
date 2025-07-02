@@ -1,32 +1,136 @@
-import os, json, time, re, pathlib, requests
-from tqdm import tqdm
+import os
+import json
+import time
+import re
+import pathlib
+import requests
+import argparse
 
-base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+from tqdm import tqdm
+from dotenv import load_dotenv
+
+load_dotenv()
+
+def list_available_models():
+    """Return a list of available model names for the configured provider."""
+    if provider == "ollama":
+        resp = requests.get(f"{base}/api/tags", timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        return [m["name"] for m in data.get("models", [])]
+    elif provider == "openrouter":
+        headers = {}
+        if OPENROUTER_API_KEY:
+            headers["Authorization"] = f"Bearer {OPENROUTER_API_KEY}"
+        resp = requests.get(f"{base}/models", headers=headers, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        return [m["id"] for m in data.get("data", [])]
+    else:
+        raise RuntimeError(f"Unsupported provider: {provider}")
+
+parser = argparse.ArgumentParser(description="Collect identification data from various chat providers")
+parser.add_argument("--provider", choices=["ollama", "openrouter"], default="ollama",
+                    help="Which provider to use")
+parser.add_argument("--models", nargs="+", help="List of models to query")
+parser.add_argument("--turns", type=int, default=25,
+                    help="Number of conversation turns to collect per model")
+parser.add_argument("--base-url", dest="base_url", default=None, help="Override base URL of the provider")
+parser.add_argument("--list", action="store_true", help="List models from provider and exit")
+args = parser.parse_args()
+
+provider = args.provider
+
+if args.list:
+    # Show models and exit
+    if provider == "openrouter":
+        OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+    base = args.base_url or (
+        os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        if provider == "ollama"
+        else "https://openrouter.ai/api/v1"
+    )
+    for m in list_available_models():
+        print(m)
+    raise SystemExit
+
+if provider == "ollama":
+    base = args.base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+elif provider == "openrouter":
+    base = args.base_url or "https://openrouter.ai/api/v1"
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY environment variable required for openrouter provider")
+else:
+    raise RuntimeError(f"Unsupported provider: {provider}")
+
 progress_path = pathlib.Path("progress.json")
 if progress_path.exists():
     progress = json.loads(progress_path.read_text())
+    progress["iterations"] = args.turns
 else:
-    progress = {"iterations": 25, "models": {}}
+    progress = {"iterations": args.turns, "models": {}}
 
 def save():
     progress_path.write_text(json.dumps(progress, indent=2))
 
+
+
 def chat(model, messages):
-    response = requests.post(f"{base}/api/chat", json={"model": model, "messages": messages}, timeout=120, stream=True)
-    result = {"message": {"content": ""}}
-    for line in response.iter_lines():
-        if line:
-            chunk = json.loads(line.decode('utf-8'))
-            if 'message' in chunk and 'content' in chunk['message']:
-                result["message"]["content"] += chunk["message"]["content"]
-            if chunk.get('done', False):
-                break
-    # Remove <think></think> tags from the response
-    result["message"]["content"] = re.sub(r'<think>.*?</think>', '', result["message"]["content"], flags=re.DOTALL | re.IGNORECASE).strip()
+    """Send chat messages to the configured provider and return the response."""
+    if provider == "ollama":
+        response = requests.post(
+            f"{base}/api/chat",
+            json={"model": model, "messages": messages},
+            timeout=120,
+            stream=True,
+        )
+
+        result = {"message": {"content": ""}}
+        for line in response.iter_lines():
+            if line:
+                chunk = json.loads(line.decode("utf-8"))
+                if "message" in chunk and "content" in chunk["message"]:
+                    result["message"]["content"] += chunk["message"]["content"]
+                if chunk.get("done", False):
+                    break
+    elif provider == "openrouter":
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(
+            f"{base}/chat/completions",
+            json={"model": model, "messages": messages, "stream": False},
+            headers=headers,
+            timeout=120,
+        )
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        result = {"message": {"content": content}}
+    else:
+        raise RuntimeError(f"Unsupported provider: {provider}")
+
+    result["message"]["content"] = re.sub(
+        r"<think>.*?</think>",
+        "",
+        result["message"]["content"],
+        flags=re.DOTALL | re.IGNORECASE,
+    ).strip()
     return result
 
-models = ['devstral:latest', 'qwen3:30b', 'qwen3:32b', 'phi4-reasoning:latest', 'qwq:latest', 'gemma3:27b', 'cogito:32b', 'gemma3:latest']
-#models = [m["name"] for m in get("tags")["models"]]
+default_models = [
+    'devstral:latest',
+    'qwen3:30b',
+    'qwen3:32b',
+    'phi4-reasoning:latest',
+    'qwq:latest',
+    'gemma3:27b',
+    'cogito:32b',
+    'gemma3:latest',
+]
+
+models = args.models if args.models else default_models
 for m in models:
     progress["models"].setdefault(m, {"data": [], "refusals": 0})
 save()
