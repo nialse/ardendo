@@ -37,6 +37,7 @@ parser.add_argument("--turns", type=int, default=25,
                     help="Number of conversation turns to collect per model")
 parser.add_argument("--base-url", dest="base_url", default=None, help="Override base URL of the provider")
 parser.add_argument("--list", action="store_true", help="List models from provider and exit")
+parser.add_argument("--debug", action="store_true", help="Show conversation with the model")
 args = parser.parse_args()
 
 provider = args.provider
@@ -78,6 +79,11 @@ def save():
 
 def chat(model, messages):
     """Send chat messages to the configured provider and return the response."""
+    if args.debug:
+        print("---- conversation ----")
+        for msg in messages:
+            print(f"{msg['role']}: {msg['content']}")
+        print("----------------------")
     if provider == "ollama":
         response = requests.post(
             f"{base}/api/chat",
@@ -117,6 +123,9 @@ def chat(model, messages):
         result["message"]["content"],
         flags=re.DOTALL | re.IGNORECASE,
     ).strip()
+    if args.debug:
+        print(f"assistant: {result['message']['content']}")
+        print("---- end ----")
     return result
 
 default_models = [
