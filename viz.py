@@ -69,7 +69,10 @@ for model in models:
             name_sex_counts = df["name_sex_class"].value_counts().reindex(categories).fillna(0).astype(int)
         else:
             name_sex_counts = pd.Series([0,0,0,0], index=categories)
-        names = df["just_name"].tolist() if "just_name" in df.columns else []
+        if "just_name" in df.columns:
+            names = [str(n).replace("**", "") for n in df["just_name"].tolist()]
+        else:
+            names = []
         summary_data.append({"model": model, "unique_names": len(set(names)), "names": names, **self_sex_counts.to_dict()})
         name_sex_summary_data.append({"model": model, **name_sex_counts.to_dict()})
     else:
@@ -97,7 +100,15 @@ if args.list:
 name_df = summary[["names"]].copy()
 name_df["names_list"] = name_df["names"]
 name_df = name_df.explode("names_list")
-name_df["clean_name"] = name_df["names_list"].apply(lambda x: str(x).split('\n')[0].strip().replace("'", "").replace('"', '').replace('.', ''))
+name_df["clean_name"] = name_df["names_list"].apply(
+    lambda x: str(x)
+    .split('\n')[0]
+    .strip()
+    .replace("'", "")
+    .replace('"', '')
+    .replace('.', '')
+    .replace('**', '')
+)
 name_df = name_df[name_df["clean_name"] != '']
 if not name_df.empty:
     name_counts = name_df.groupby(["model", "clean_name"]).size().unstack(fill_value=0)
