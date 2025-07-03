@@ -58,12 +58,17 @@ for model in models:
 summary = pd.DataFrame(summary_data).set_index("model")
 name_sex_summary = pd.DataFrame(name_sex_summary_data).set_index("model")
 
-summary.index = summary.index.str.replace(':latest', '', regex=False)
-name_sex_summary.index = name_sex_summary.index.str.replace(':latest', '', regex=False)
+
+def short_name(model_name: str) -> str:
+    """Return a compact representation of the model name for display."""
+    return model_name.split("/")[-1].replace(":latest", "")
+
+display_names = [short_name(m) for m in summary.index]
 
 if args.list:
     table = summary[list(categories)].copy()
     table.insert(0, "completed_turns", [len(progress["models"][m].get("data", [])) for m in summary.index])
+    table.index = [short_name(m) for m in table.index]
     print(table.to_string())
     exit()
 
@@ -94,7 +99,7 @@ fig = make_subplots(
 
 for cat in categories:
     fig.add_trace(go.Bar(
-        x=summary.index,
+        x=display_names,
         y=summary[cat],
         name=f"{cat}",
         marker_color=colors[cat],
@@ -103,7 +108,7 @@ for cat in categories:
 
 for cat in categories:
     fig.add_trace(go.Bar(
-        x=name_sex_summary.index,
+        x=display_names,
         y=name_sex_summary[cat],
         name=f"Name Assoc: {cat}",
         marker_color=colors[cat],
@@ -137,7 +142,7 @@ if not name_counts.empty:
 
     fig_heatmap = go.Figure(data=go.Heatmap(
         z=name_counts.values,
-        x=name_counts.columns,
+        x=[short_name(c) for c in name_counts.columns],
         y=name_counts.index,
         colorscale=heatmap_colorscale,
         colorbar=dict(title='Count'),
