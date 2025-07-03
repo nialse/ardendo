@@ -36,7 +36,28 @@ if not progress_path.exists():
     
 progress = json.loads(progress_path.read_text())
 
+# Map short model names to their full identifiers as stored in progress.json
+name_map = {}
+for full_name in progress["models"].keys():
+    short = full_name.split("/")[-1].replace(":latest", "")
+    name_map.setdefault(short, []).append(full_name)
+
 models = args.models if args.models else list(progress["models"].keys())
+if args.models:
+    resolved = []
+    for m in models:
+        if m in progress["models"]:
+            resolved.append(m)
+        elif m in name_map:
+            if len(name_map[m]) == 1:
+                resolved.append(name_map[m][0])
+            else:
+                print(f"Ambiguous model '{m}' matches {name_map[m]}. Please use a full name.")
+                exit()
+        else:
+            print(f"Model '{m}' not found in progress.json")
+            exit()
+    models = resolved
 models = sorted(models)
 summary_data = []
 name_sex_summary_data = []
